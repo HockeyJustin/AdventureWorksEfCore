@@ -1,5 +1,10 @@
-﻿using System;
+﻿using AdventureworksQueries.Models;
+using Microsoft.Data.SqlClient;
+using System;
+using System.Data;
+using System.Diagnostics;
 using System.Linq;
+using Dapper;
 
 namespace AdventureworksQueries
 {
@@ -7,45 +12,66 @@ namespace AdventureworksQueries
 	{
 		static void Main(string[] args)
 		{
-			Console.WriteLine("AdventureWorks Log Filler!");
 
+			Console.WriteLine("EF vs Dapper!");
+
+			// A query just so we discount startup times....
+			QueryWithEF();
+			QueryWithDapper();
+
+			long totalSecondsEF = 0;
+			long totalSecondsDp = 0;
+			long iterationCount = 0;
 
 			while(true)
 			{
-				using(var context= new Models.AdventureWorksContext())
-				{
-					var all = context.Product.ToList();
+				iterationCount++;
 
-					var allErrors = context.ErrorLog.ToArray();
+				Stopwatch st = new Stopwatch();
 
-				
+				// ENTITY FRAMEWORK
+				st.Start();
+				QueryWithEF();
+				st.Stop();
 
-					var errorNumber = (allErrors != null && allErrors.Any()) ? allErrors.Max(_ => _.ErrorNumber) + 1: 1;
+				totalSecondsEF = totalSecondsEF + st.ElapsedMilliseconds;
+				//Console.WriteLine($"Entity in: {st.ElapsedMilliseconds}ms");
+				st.Reset();
 
-					Console.WriteLine($"Error log number {errorNumber}");
 
-					Models.ErrorLog log = new Models.ErrorLog()
-					{
-						ErrorTime = DateTime.Now,
-						UserName = "LogSplatter",
-						ErrorNumber = errorNumber,
-						ErrorSeverity = 0,
-						ErrorProcedure = "Main",
-						ErrorLine = 99,
-						ErrorMessage = "Just filling the logs and adding IOPS"
+				// DAPPER
+				st.Start();
+				QueryWithDapper();
+				st.Stop();
 
-					};
+				totalSecondsDp = totalSecondsDp + st.ElapsedMilliseconds;
+				//Console.WriteLine($"Dapper in: {st.ElapsedMilliseconds}ms");
 
-					context.ErrorLog.Add(log);
-					context.SaveChanges();
+				var efAverage = totalSecondsEF / iterationCount;
+				var dpAverage = totalSecondsDp / iterationCount;
 
-					var allErrorsNow = context.ErrorLog.ToArray();
+				Console.WriteLine($"Average EF: {efAverage}, Average Dapper: {dpAverage}");
 
-					//System.Threading.Thread.Sleep(100);
-				}
+
 			}
+		}
 
+		private static void QueryWithEF()
+		{
+			using (var context = new AdventureWorksContext())
+			{
+				var all = context.Product.ToList();
+			}
+		}
 
+		private static void QueryWithDapper()
+		{
+			using (IDbConnection conn = new SqlConnection(AdventureWorksContext.ConnectionString))
+			{
+				string sQuery = "SELECT * FROM [SalesLT].[Product]";
+				conn.Open();
+				var result = conn.Query(sQuery).ToList();
+			}
 		}
 	}
 }
